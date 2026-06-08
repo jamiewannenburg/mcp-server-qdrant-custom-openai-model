@@ -134,11 +134,13 @@ class QdrantConnector:
         }
         if vector_name:
             query_kwargs["using"] = vector_name
+        else:
+            query_kwargs["using"] = ""
         search_results = await self._client.query_points(**query_kwargs)
 
         return [
             Entry(
-                content=result.payload.get("document") or result.payload.get("text"),
+                content=result.payload.get("document") or result.payload.get("text") or result.payload.get("page_content"),
                 metadata=result.payload.get("metadata")
                 or result.payload.get(METADATA_PATH)
                 or None,
