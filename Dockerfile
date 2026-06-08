@@ -14,6 +14,7 @@ RUN uv pip install --system --no-cache-dir .
 EXPOSE 8000
 
 # Set environment variables with defaults that can be overridden at runtime
+ENV FASTMCP_HOST="0.0.0.0"
 ENV QDRANT_URL=""
 ENV QDRANT_API_KEY=""
 ENV COLLECTION_NAME="default-collection"
