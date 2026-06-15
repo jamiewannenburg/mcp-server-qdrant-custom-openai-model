@@ -4,22 +4,22 @@ overview: Port namespace-prefixed tool naming, optional find limit, FastMCP upgr
 todos:
   - id: settings-namespace
     content: Add NAMESPACE to settings.py and wire into QdrantMCPServer
-    status: pending
+    status: completed
   - id: find-limit
     content: Add optional limit param to find(), defaulting to QDRANT_SEARCH_LIMIT
-    status: pending
+    status: completed
   - id: fastmcp-upgrade
     content: Bump fastmcp to >=2.11.3, add uvicorn dep, run uv lock
-    status: pending
+    status: completed
   - id: bearer-auth
     content: Port BearerAuthMiddleware + http app export in server.py; update main.py and Dockerfile
-    status: pending
+    status: completed
   - id: readme-cloud
     content: Add Cloud Run deploy section, GCP Marketplace Qdrant option, and new env var docs
-    status: pending
+    status: completed
   - id: tests
     content: Add tests for namespace tool names and find limit behavior
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -6,6 +6,7 @@ from mcp_server_qdrant.settings import (
     DEFAULT_TOOL_STORE_DESCRIPTION,
     EmbeddingProviderSettings,
     QdrantSettings,
+    ServerSettings,
     ToolSettings,
 )
 
@@ -82,6 +83,17 @@ class TestEmbeddingProviderSettings:
         monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
         with pytest.raises(ValueError):
             EmbeddingProviderSettings()
+
+
+class TestServerSettings:
+    def test_default_namespace(self):
+        settings = ServerSettings()
+        assert settings.namespace == "qdrant"
+
+    def test_custom_namespace(self, monkeypatch):
+        monkeypatch.setenv("NAMESPACE", "memory")
+        settings = ServerSettings()
+        assert settings.namespace == "memory"
 
 
 class TestToolSettings:

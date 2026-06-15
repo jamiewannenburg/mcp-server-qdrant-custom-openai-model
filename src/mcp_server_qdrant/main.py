@@ -1,4 +1,5 @@
 import argparse
+import os
 
 
 def main():
@@ -19,6 +20,15 @@ def main():
 
     # Import is done here to make sure environment variables are loaded
     # only after we make the changes.
-    from mcp_server_qdrant.server import mcp
+    if args.transport in ("sse", "streamable-http"):
+        import uvicorn
 
-    mcp.run(transport=args.transport)
+        from mcp_server_qdrant.server import build_http_app
+
+        host = os.getenv("FASTMCP_HOST", "127.0.0.1")
+        port = int(os.getenv("FASTMCP_PORT", "8000"))
+        uvicorn.run(build_http_app(args.transport), host=host, port=port)
+    else:
+        from mcp_server_qdrant.server import mcp
+
+        mcp.run(transport=args.transport)

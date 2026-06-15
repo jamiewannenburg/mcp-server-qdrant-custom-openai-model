@@ -15,6 +15,7 @@ from mcp_server_qdrant.qdrant import ArbitraryFilter, Entry, Metadata, QdrantCon
 from mcp_server_qdrant.settings import (
     EmbeddingProviderSettings,
     QdrantSettings,
+    ServerSettings,
     ToolSettings,
 )
 
@@ -32,6 +33,7 @@ class QdrantMCPServer(FastMCP):
         self,
         tool_settings: ToolSettings,
         qdrant_settings: QdrantSettings,
+        server_settings: ServerSettings | None = None,
         embedding_provider_settings: Optional[EmbeddingProviderSettings] = None,
         embedding_provider: Optional[EmbeddingProvider] = None,
         name: str = "mcp-server-qdrant",
@@ -40,6 +42,7 @@ class QdrantMCPServer(FastMCP):
     ):
         self.tool_settings = tool_settings
         self.qdrant_settings = qdrant_settings
+        self.server_settings = server_settings or ServerSettings()
 
         if embedding_provider_settings and embedding_provider:
             raise ValueError(
@@ -130,6 +133,10 @@ class QdrantMCPServer(FastMCP):
             collection_name: Annotated[
                 str, Field(description="The collection to search in")
             ],
+            limit: Annotated[
+                int | None,
+                Field(description="Max results to return"),
+            ] = None,
             query_filter: ArbitraryFilter | None = None,
         ) -> list[str] | None:
             """
@@ -149,10 +156,12 @@ class QdrantMCPServer(FastMCP):
 
             await ctx.debug(f"Finding results for query {query}")
 
+            effective_limit = limit or self.qdrant_settings.search_limit
+
             entries = await self.qdrant_connector.search(
                 query,
                 collection_name=collection_name,
-                limit=self.qdrant_settings.search_limit,
+                limit=effective_limit,
                 query_filter=query_filter,
             )
             if not entries:
@@ -184,9 +193,13 @@ class QdrantMCPServer(FastMCP):
                 store_foo, {"collection_name": self.qdrant_settings.collection_name}
             )
 
+        namespace = self.server_settings.namespace
+        find_name = f"{namespace}-find"
+        store_name = f"{namespace}-store"
+
         self.tool(
             find_foo,
-            name="qdrant-find",
+            name=find_name,
             description=self.tool_settings.tool_find_description,
         )
 
@@ -194,6 +207,6 @@ class QdrantMCPServer(FastMCP):
             # Those methods can modify the database
             self.tool(
                 store_foo,
-                name="qdrant-store",
+                name=store_name,
                 description=self.tool_settings.tool_store_description,
             )

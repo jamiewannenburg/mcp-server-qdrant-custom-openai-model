@@ -26,4 +26,4 @@ ENV EMBEDDING_EXPECTED_RESPONSE_MODEL=""
 ENV EMBEDDING_VECTOR_NAME=""
 
 # Run the server with streamable HTTP transport
-CMD ["mcp-server-qdrant", "--transport", "streamable-http"]
+CMD ["sh", "-c", "exec uvicorn mcp_server_qdrant.server:app --host \"$FASTMCP_HOST\" --port \"$FASTMCP_PORT\""]

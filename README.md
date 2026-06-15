@@ -34,7 +34,9 @@ It acts as a semantic memory layer on top of the Qdrant database.
 
 ### Tools
 
-1. `qdrant-store`
+Tools are prefixed at runtime using the `NAMESPACE` environment variable (default: `qdrant`). With the default namespace, clients see `qdrant-store` and `qdrant-find`. Set `NAMESPACE=memory` to expose `memory-store` and `memory-find` instead — useful when mounting multiple instances in the same MCP client.
+
+1. `{NAMESPACE}-store` (default: `qdrant-store`)
    - Store some information in the Qdrant database
    - Input:
      - `information` (string): Information to store
@@ -42,13 +44,16 @@ It acts as a semantic memory layer on top of the Qdrant database.
      - `collection_name` (string): Name of the collection to store the information in. This field is required if there are no default collection name.
                                    If there is a default collection name, this field is not enabled.
    - Returns: Confirmation message
-2. `qdrant-find`
+2. `{NAMESPACE}-find` (default: `qdrant-find`)
    - Retrieve relevant information from the Qdrant database
    - Input:
      - `query` (string): Query to use for searching
+     - `limit` (integer, optional): Max results to return. Defaults to `QDRANT_SEARCH_LIMIT`.
      - `collection_name` (string): Name of the collection to store the information in. This field is required if there are no default collection name.
                                    If there is a default collection name, this field is not enabled.
    - Returns: Information stored in the Qdrant database as separate messages
+
+The `qdrant-store` tool is omitted when `QDRANT_READ_ONLY=true`.
 
 ## Environment Variables
 
@@ -60,6 +65,11 @@ The configuration of the server is done using environment variables:
 | `QDRANT_API_KEY`         | API key for the Qdrant server                                       | None                                                              |
 | `COLLECTION_NAME`        | Name of the default collection to use.                              | None                                                              |
 | `QDRANT_LOCAL_PATH`      | Path to the local Qdrant database (alternative to `QDRANT_URL`)     | None                                                              |
+| `QDRANT_SEARCH_LIMIT`    | Default max results for `find` (overridable per call via `limit`)   | `10`                                                              |
+| `QDRANT_READ_ONLY`       | When `true`, omit the store tool                                    | `false`                                                           |
+| `QDRANT_ALLOW_ARBITRARY_FILTER` | Expose raw `query_filter` on find                          | `false`                                                           |
+| `NAMESPACE`              | Prefix for MCP tool names (`{NAMESPACE}-find`, `{NAMESPACE}-store`) | `qdrant`                                                          |
+| `AUTH_BEARER_TOKEN`      | Bearer token required on HTTP requests (optional)                   | None                                                              |
 | `EMBEDDING_PROVIDER`     | Embedding provider to use (`fastembed` or `openai`)                  | `fastembed`                                                       |
 | `EMBEDDING_MODEL`        | Name of the embedding model to use                                  | `sentence-transformers/all-MiniLM-L6-v2`                          |
 | `EMBEDDING_BASE_URL`     | Base URL for OpenAI-compatible embeddings API                        | None                                                              |
@@ -178,6 +188,182 @@ docker run -p 8000:8000 \
 > [!TIP]
 > Please note that we set `FASTMCP_HOST="0.0.0.0"` to make the server listen on all network interfaces. This is
 > necessary when running the server in a Docker container.
+
+When using HTTP transport (`sse` or `streamable-http`), connect your MCP client to `http://localhost:8000/mcp` (no trailing slash). Set `AUTH_BEARER_TOKEN` to require `Authorization: Bearer TOKEN` on every request.
+
+### Deploy to Google Cloud Run
+
+Cloud Run can host this MCP server as a stateless HTTP service. Qdrant itself should run separately (see [Setting up Qdrant on Google Cloud](#setting-up-qdrant-on-google-cloud) below); point `QDRANT_URL` at that instance.
+
+#### Prerequisites
+
+1. Install and authenticate the Google Cloud CLI:
+
+   ```bash
+   gcloud auth login
+   gcloud config set project PROJECT_ID
+   ```
+
+2. Enable required APIs:
+
+   ```bash
+   gcloud services enable run.googleapis.com secretmanager.googleapis.com
+   ```
+
+3. Create a dedicated service account (recommended):
+
+   ```bash
+   gcloud iam service-accounts create mcp-server-qdrant \
+     --display-name="mcp-server-qdrant Cloud Run"
+
+   SA_EMAIL="mcp-server-qdrant@PROJECT_ID.iam.gserviceaccount.com"
+   ```
+
+4. Optional: store secrets in Secret Manager.
+
+   ```bash
+   printf "%s" "your-embedding-key" | gcloud secrets create embedding-api-key \
+     --replication-policy="automatic" --data-file=-
+
+   printf "%s" "your-qdrant-key" | gcloud secrets create qdrant-api-key \
+     --replication-policy="automatic" --data-file=-
+
+   AUTH_TOKEN="$(openssl rand -base64 48)"
+   printf "%s" "${AUTH_TOKEN}" | gcloud secrets create mcp-server-qdrant-auth-token \
+     --replication-policy="automatic" --data-file=-
+
+   for SECRET in embedding-api-key qdrant-api-key mcp-server-qdrant-auth-token; do
+     gcloud secrets add-iam-policy-binding "${SECRET}" \
+       --member="serviceAccount:${SA_EMAIL}" \
+       --role="roles/secretmanager.secretAccessor"
+   done
+   ```
+
+   Save `AUTH_TOKEN` in your password manager; MCP clients must send `Authorization: Bearer TOKEN` on every request when `AUTH_BEARER_TOKEN` is set.
+
+#### Deploy from source
+
+```bash
+gcloud run deploy mcp-server-qdrant \
+  --source . \
+  --region REGION \
+  --port 8000 \
+  --service-account="${SA_EMAIL}" \
+  --min-instances 0 \
+  --set-env-vars "EMBEDDING_PROVIDER=openai,EMBEDDING_MODEL=text-embedding-3-large,EMBEDDING_BASE_URL=https://api.openai.com,QDRANT_URL=https://YOUR_QDRANT_URL,COLLECTION_NAME=mcp_memory,NAMESPACE=qdrant" \
+  --set-secrets "EMBEDDING_API_KEY=embedding-api-key:latest,QDRANT_API_KEY=qdrant-api-key:latest,AUTH_BEARER_TOKEN=mcp-server-qdrant-auth-token:latest"
+```
+
+Omit `--set-secrets AUTH_BEARER_TOKEN=...` if you do not want application-level bearer authentication.
+
+If your MCP client cannot mint Google Cloud Run IAM tokens and you rely on `AUTH_BEARER_TOKEN`, add `--allow-unauthenticated`. The application middleware still rejects requests without the correct bearer token.
+
+Keep the service private (default) when clients can authenticate with Cloud Run IAM instead.
+
+#### Deploy a pre-built image
+
+```bash
+docker build -t gcr.io/PROJECT_ID/mcp-server-qdrant:latest .
+docker push gcr.io/PROJECT_ID/mcp-server-qdrant:latest
+
+gcloud run deploy mcp-server-qdrant \
+  --image gcr.io/PROJECT_ID/mcp-server-qdrant:latest \
+  --region REGION \
+  --port 8000 \
+  --service-account="${SA_EMAIL}" \
+  --set-env-vars "EMBEDDING_PROVIDER=openai,EMBEDDING_MODEL=text-embedding-3-large,EMBEDDING_BASE_URL=https://api.openai.com,QDRANT_URL=https://YOUR_QDRANT_URL,NAMESPACE=qdrant" \
+  --set-secrets "EMBEDDING_API_KEY=embedding-api-key:latest,QDRANT_API_KEY=qdrant-api-key:latest,AUTH_BEARER_TOKEN=mcp-server-qdrant-auth-token:latest"
+```
+
+After deployment, connect your MCP client to:
+
+```text
+https://SERVICE_URL/mcp
+```
+
+Get the service URL:
+
+```bash
+gcloud run services describe mcp-server-qdrant \
+  --region REGION \
+  --format='value(status.url)'
+```
+
+#### Cursor configuration (Cloud Run)
+
+```json
+{
+  "mcpServers": {
+    "qdrant-memory": {
+      "url": "https://SERVICE_URL/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_AUTH_TOKEN"
+      }
+    }
+  }
+}
+```
+
+References:
+
+- [Cloud Run deploy reference](https://cloud.google.com/sdk/gcloud/reference/run/deploy)
+- [Cloud Run secrets](https://cloud.google.com/run/docs/configuring/services/secrets)
+
+### Setting up Qdrant on Google Cloud
+
+This MCP server is a **client** of Qdrant. You need a running Qdrant instance before deploying the MCP server. Choose an option based on workload size and durability requirements.
+
+#### Option 1: Qdrant Cloud (managed, recommended for production)
+
+[Qdrant Cloud](https://cloud.qdrant.io/) is the simplest path: fully managed clusters with backups, scaling, and a stable HTTPS endpoint.
+
+1. Create a cluster at [cloud.qdrant.io](https://cloud.qdrant.io/).
+2. Copy the cluster URL and API key.
+3. Set in your MCP server environment:
+
+   ```bash
+   QDRANT_URL=https://xxxxxxxx.qdrant.io
+   QDRANT_API_KEY=your-cluster-api-key
+   ```
+
+No GCP infrastructure to manage; billing is through Qdrant Cloud.
+
+#### Option 1b: Qdrant Cloud via Google Cloud Marketplace
+
+Google Cloud Marketplace offers a [Qdrant subscription](https://qdrant.tech/documentation/cloud-pricing-payments/) that bills Qdrant Cloud usage through your existing GCP account. Clusters are still created and managed in the [Qdrant Cloud Console](https://cloud.qdrant.io/) — Marketplace handles payment only.
+
+To subscribe:
+
+1. Go to **Billing Details** in the Qdrant Cloud Console.
+2. Select **GCP Marketplace** as the payment method and follow the redirect to subscribe.
+3. After subscribing, create clusters in the Qdrant Cloud Console as usual and use the cluster URL and API key as `QDRANT_URL` and `QDRANT_API_KEY`.
+
+#### Option 2: Qdrant on Cloud Run (dev / small workloads)
+
+You can run the official `qdrant/qdrant` container on Cloud Run for low-traffic or development use. Qdrant keeps indexes in memory and writes data to disk, so treat this as **single-instance only**.
+
+Important constraints:
+
+- Set `--min-instances 1` to avoid cold starts reloading large HNSW indexes.
+- Set `--max-instances 1` — Qdrant is a single-writer store; multiple Cloud Run instances cannot safely share one collection.
+- Use a **Cloud Storage volume mount** (GCS FUSE) for persistence across restarts.
+
+See the [Qdrant configuration guide](https://qdrant.tech/documentation/guides/configuration/) and [Cloud Run volume mounts](https://cloud.google.com/run/docs/configuring/services/cloud-storage-volume-mounts).
+
+#### Option 3: Qdrant on GKE (production / HA)
+
+For production workloads needing persistent SSD storage, rolling updates, and optional distributed mode, deploy Qdrant on [Google Kubernetes Engine](https://cloud.google.com/kubernetes-engine). Google publishes a tutorial: [Deploy a Qdrant vector database on GKE](https://cloud.google.com/kubernetes-engine/docs/tutorials/deploy-qdrant).
+
+Point the MCP server at the internal service URL from Cloud Run (via VPC connector) or from clients inside the same VPC.
+
+#### Choosing an option
+
+| Option | Best for | Persistence | Scaling |
+| ------ | -------- | ----------- | ------- |
+| Qdrant Cloud | Production without ops overhead | Managed | Managed |
+| GCP Marketplace | Qdrant Cloud billed via GCP | Managed | Managed |
+| Cloud Run | Dev / prototypes | GCS FUSE mount | Single instance only |
+| GKE | Production on GCP | Regional SSD PVCs | StatefulSet / distributed |
 
 ### Installing via Smithery
 

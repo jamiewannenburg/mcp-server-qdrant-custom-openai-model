@@ -18,6 +18,14 @@ DEFAULT_TOOL_FIND_DESCRIPTION = (
 METADATA_PATH = "metadata"
 
 
+class ServerSettings(BaseSettings):
+    """
+    Configuration for the MCP server itself.
+    """
+
+    namespace: str = Field(default="qdrant", validation_alias="NAMESPACE")
+
+
 class ToolSettings(BaseSettings):
     """
     Configuration for all the tools.
@@ -106,7 +114,9 @@ class QdrantSettings(BaseSettings):
         default=None, validation_alias="COLLECTION_NAME"
     )
     local_path: str | None = Field(default=None, validation_alias="QDRANT_LOCAL_PATH")
-    search_limit: int = Field(default=10, validation_alias="QDRANT_SEARCH_LIMIT")
+    search_limit: int = Field(
+        default=10, ge=1, le=100, validation_alias="QDRANT_SEARCH_LIMIT"
+    )
     read_only: bool = Field(default=False, validation_alias="QDRANT_READ_ONLY")
 
     filterable_fields: list[FilterableField] | None = Field(default=None)
