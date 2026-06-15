@@ -221,6 +221,10 @@ Cloud Run can host this MCP server as a stateless HTTP service. Qdrant itself sh
 
 4. Optional: store secrets in Secret Manager.
 
+   Use `printf` on Linux/macOS so secret values are written without a trailing newline. On Windows PowerShell, piping to `gcloud` adds `\r\n` to the value, which breaks HTTP headers such as `QDRANT_API_KEY`. Write the value to a temp file with `[System.IO.File]::WriteAllBytes` instead.
+
+   **Linux / macOS (bash):**
+
    ```bash
    printf "%s" "your-embedding-key" | gcloud secrets create embedding-api-key \
      --replication-policy="automatic" --data-file=-
@@ -237,6 +241,54 @@ Cloud Run can host this MCP server as a stateless HTTP service. Qdrant itself sh
        --member="serviceAccount:${SA_EMAIL}" \
        --role="roles/secretmanager.secretAccessor"
    done
+   ```
+
+   **Windows (PowerShell):**
+
+   ```powershell
+   $utf8 = New-Object System.Text.UTF8Encoding $false
+   $SA_EMAIL = "mcp-server-qdrant@PROJECT_ID.iam.gserviceaccount.com"
+
+   function Write-GcloudSecretFile {
+     param([string]$Value)
+     $tmp = [System.IO.Path]::GetTempFileName()
+     [System.IO.File]::WriteAllBytes($tmp, $utf8.GetBytes($Value))
+     return $tmp
+   }
+
+   $tmp = Write-GcloudSecretFile "your-embedding-key"
+   gcloud secrets create embedding-api-key --replication-policy="automatic" --data-file=$tmp
+   Remove-Item $tmp -Force
+
+   $tmp = Write-GcloudSecretFile "your-qdrant-key"
+   gcloud secrets create qdrant-api-key --replication-policy="automatic" --data-file=$tmp
+   Remove-Item $tmp -Force
+
+   $bytes = New-Object byte[] 48
+   [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+   $AUTH_TOKEN = [Convert]::ToBase64String($bytes)
+   $tmp = Write-GcloudSecretFile $AUTH_TOKEN
+   gcloud secrets create mcp-server-qdrant-auth-token --replication-policy="automatic" --data-file=$tmp
+   Remove-Item $tmp -Force
+
+   foreach ($SECRET in @("embedding-api-key", "qdrant-api-key", "mcp-server-qdrant-auth-token")) {
+     gcloud secrets add-iam-policy-binding $SECRET `
+       --member="serviceAccount:$SA_EMAIL" `
+       --role="roles/secretmanager.secretAccessor"
+   }
+   ```
+
+   To update an existing secret (equivalent to `printf "%s" "value" | gcloud secrets versions add ...`):
+
+   ```bash
+   printf "%s" "your-qdrant-key" | gcloud secrets versions add qdrant-api-key --data-file=-
+   ```
+
+   ```powershell
+   # Uses Write-GcloudSecretFile from the PowerShell block above.
+   $tmp = Write-GcloudSecretFile "your-qdrant-key"
+   gcloud secrets versions add qdrant-api-key --data-file=$tmp
+   Remove-Item $tmp -Force
    ```
 
    Save `AUTH_TOKEN` in your password manager; MCP clients must send `Authorization: Bearer TOKEN` on every request when `AUTH_BEARER_TOKEN` is set.
