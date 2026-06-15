@@ -265,9 +265,14 @@ Keep the service private (default) when clients can authenticate with Cloud Run 
 ```bash
 docker build -t gcr.io/PROJECT_ID/mcp-server-qdrant:latest .
 docker push gcr.io/PROJECT_ID/mcp-server-qdrant:latest
+# or to dockerhub
+docker build -t jamiewannenburg/mcp-server-qdrant:latest .
+docker push jamiewannenburg/mcp-server-qdrant
 
 gcloud run deploy mcp-server-qdrant \
   --image gcr.io/PROJECT_ID/mcp-server-qdrant:latest \
+# or
+  --image docker.io/jamiewannenburg/mcp-server-qdrant:latest
   --region REGION \
   --port 8000 \
   --service-account="${SA_EMAIL}" \

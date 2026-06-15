@@ -3,6 +3,8 @@ import os
 from typing import Any
 
 from fastmcp import settings as fastmcp_settings
+from load_dotenv import load_dotenv
+load_dotenv()
 
 from mcp_server_qdrant.mcp_server import QdrantMCPServer
 from mcp_server_qdrant.settings import (
@@ -18,9 +20,7 @@ mcp = QdrantMCPServer(
     tool_settings=ToolSettings(),
     qdrant_settings=QdrantSettings(),
     server_settings=ServerSettings(),
-    embedding_provider_settings=EmbeddingProviderSettings(),
-    host=os.getenv("FASTMCP_HOST", "127.0.0.1"),
-    port=int(os.getenv("FASTMCP_PORT", "8000")),
+    embedding_provider_settings=EmbeddingProviderSettings()
 )
 
 

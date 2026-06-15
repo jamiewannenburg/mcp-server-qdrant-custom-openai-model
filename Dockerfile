@@ -15,6 +15,7 @@ EXPOSE 8000
 
 # Set environment variables with defaults that can be overridden at runtime
 ENV FASTMCP_HOST="0.0.0.0"
+ENV FASTMCP_PORT="8000"
 ENV QDRANT_URL=""
 ENV QDRANT_API_KEY=""
 ENV COLLECTION_NAME="default-collection"
@@ -24,6 +25,7 @@ ENV EMBEDDING_BASE_URL=""
 ENV EMBEDDING_API_KEY=""
 ENV EMBEDDING_EXPECTED_RESPONSE_MODEL=""
 ENV EMBEDDING_VECTOR_NAME=""
+ENV FASTMCP_JSON_RESPONSE="true"
 
 # Run the server with streamable HTTP transport
-CMD ["sh", "-c", "exec uvicorn mcp_server_qdrant.server:app --host \"$FASTMCP_HOST\" --port \"$FASTMCP_PORT\""]
+CMD ["sh", "-c", "exec uvicorn mcp_server_qdrant.server:app --host \"${FASTMCP_HOST:-0.0.0.0}\" --port \"${PORT:-${FASTMCP_PORT:-8000}}\""]
